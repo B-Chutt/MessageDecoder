@@ -1,5 +1,6 @@
 import cv2
 import os
+import time
 
 def extract_frames(video_path, output_folder, frame_skip=1):
     """
@@ -124,10 +125,79 @@ def show_nth_frame_scaled(video_path, frame_number, target_width):
 
     cap.release()
 
-# Example usage:
-# show_nth_frame_scaled("input_video.mp4", 150, 640)  # shows frame 150 scaled to 640px width
+
+def get_lit_led_positions(frame):
+    positions = []
+
+    # Convert to grayscale
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+    # Threshold to find bright regions
+    _, mask = cv2.threshold(gray, 220, 255, cv2.THRESH_BINARY)
+
+    # Find contours of bright regions
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Draw circles around bright areas
+    for cnt in contours:
+        (x, y), radius = cv2.minEnclosingCircle(cnt)
+        center = (int(x), int(y))
+        radius = int(radius)
+        if (radius > 10) and (y < 1420):
+            positions.append((x, y))
+    return positions
+
+def get_led_positions(video_path):
+    all_positions = []
+
+    # Open video file
+    vid = cv2.VideoCapture(video_path)
+    if not vid.isOpened():
+        print("Error: Could not open video.")
+        return
+    total_frames = vid.get(cv2.CAP_PROP_FRAME_COUNT)
+    frame_rate = vid.get(cv2.CAP_PROP_FPS)
+    width = vid.get(cv2.CAP_PROP_FRAME_WIDTH)
+    height = vid.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    print("Video file has " + str(total_frames) + " frames and runs at " + str(frame_rate)+" FPS")
+    print("Frame size is " + str(width) + " X " + str(height)+".")
+
+    got_frame = True
+    frame_number = 0
+
+    while got_frame:
+        got_frame, frame = vid.read()
+        if got_frame:
+            found_positions = get_lit_led_positions(frame)
+            print("Frame " + str(frame_number) + ". " + str(len(found_positions)) + " lit LEDs found")
+            if frame_number == 47:
+                print("It's about to go wrong")
+            new_led_count = 0
+            for found_pos in found_positions:
+                already_seen = 0
+                for existing_pos in all_positions:
+                    if (abs(found_pos[0] - existing_pos[0]) < 10) and (abs(found_pos[1] - existing_pos[1]) < 10):
+                        already_seen += 1
+                        if already_seen > 1:
+                            print("ERROR LED stored multiple times")
+                if already_seen == 0:
+                    all_positions.append(found_pos)
+                    new_led_count += 1
+            if new_led_count != 0:
+                print("Found " + str(new_led_count) + " new LEDs")
+            frame_number += 1
+    vid.release()
+
+    for position in all_positions:
+        print (str(position[0]) + "," + str(position[1]))
+
+
+
+
 
 print("message_decode running")
+get_led_positions("message.mp4")
+
 #extract_frames("message.mp4", "output_frames", frame_skip=30)
-highlight_bright_areas("output_frames/frame_00001.jpg", "output_frames/frame_00001_marked.jpg", threshold=190)
-show_nth_frame_scaled("message.mp4", 30, 500)
+#highlight_bright_areas("output_frames/frame_00001.jpg", "output_frames/frame_00001_marked.jpg", threshold=190)
+#show_nth_frame_scaled("message.mp4", 30, 500)
