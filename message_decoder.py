@@ -1,6 +1,7 @@
 import cv2
 import os
-import time
+import math
+from collections import defaultdict
 
 def extract_frames(video_path, output_folder, frame_skip=1):
     """
@@ -187,16 +188,88 @@ def get_led_positions(video_path):
                 print("Found " + str(new_led_count) + " new LEDs")
             frame_number += 1
     vid.release()
-
-    for position in all_positions:
-        print (str(position[0]) + "," + str(position[1]))
+    return all_positions
 
 
+def split_and_sort_hexagon_sides(points):
+    """
+    Given a list of (x, y) points that lie roughly on the sides of a hexagon,
+    return six lists of points, each sorted anti-clockwise along the hexagon.
+    """
 
+    if not points:
+        return [[] for _ in range(6)]
+
+    # --- 1. Compute centroid ---
+    cx = sum(p[0] for p in points) / len(points)
+    cy = sum(p[1] for p in points) / len(points)
+
+    # --- 2. Compute angle of each point relative to centroid ---
+    angle_data = []
+    for p in points:
+        dx = p[0] - cx
+        dy = p[1] - cy
+        ang = math.atan2(dy, dx)
+        ang += (math.pi/6) #Offset by half a side
+        ang = (ang + 2*math.pi) % (2*math.pi)
+        angle_data.append((p, ang))
+
+    # --- 3. Assign to 6 angular sectors ---
+    sector_size = 2 * math.pi / 6
+    sides = defaultdict(list)
+    for p, ang in angle_data:
+        sector = int(ang // sector_size)
+        sides[sector].append((p, ang))
+
+    # --- 4. Sort the sides themselves anti-clockwise ---
+    sorted_sides = []
+    for i in range(6):
+        side = sides[i]
+
+        # Sort points within each side by angle (anti-clockwise)
+        side_sorted = sorted(side, key=lambda x: x[1])
+
+        # Keep only the points, not the angles
+        sorted_sides.append([p for p, _ in side_sorted])
+
+    return sorted_sides
+
+
+def get_frame_data(coords, frame):
+    # Convert to grayscale
+    grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    output_bytes = []
+    for side in coords:
+        value = 0
+        bit_weight = 1
+        for led in side:
+            if grey[int(led[1]), int(led[0])] > 220:
+                value += bit_weight
+            bit_weight *= 2
+        output_bytes.append(value)
+    return output_bytes
 
 
 print("message_decode running")
-get_led_positions("message.mp4")
+leds = get_led_positions("message.mp4")
+sides = split_and_sort_hexagon_sides(leds)
+for i in range(6):
+    print("\r\nSide " + str(i) + ".")
+    for led in sides[i]:
+        print (str(led[0]) + "," + str(led[1]))
+    print("")
+
+    # Open video file
+    vid = cv2.VideoCapture("message.mp4")
+    if not vid.isOpened():
+        print("Error: Could not open video.")
+    got_frame, frame = vid.read()
+    frame_data = get_frame_data(sides, frame)
+    print("First frame data:")
+    for value in frame_data:
+        print(value)
+
+
 
 #extract_frames("message.mp4", "output_frames", frame_skip=30)
 #highlight_bright_areas("output_frames/frame_00001.jpg", "output_frames/frame_00001_marked.jpg", threshold=190)
