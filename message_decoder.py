@@ -240,15 +240,76 @@ def get_frame_data(coords, frame):
     grey = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     output_bytes = []
     for side in coords:
+    #side = coords[2]
+    #if True:
         value = 0
         bit_weight = 1
         for led in side:
             if grey[int(led[1]), int(led[0])] > 220:
                 value += bit_weight
+#                cv2.circle(frame, (int(led[0]),int(led[1])), 25, (0, 255, 0), 2)  # green circles
+#            else:
+#                cv2.circle(frame, (int(led[0]),int(led[1])), 25, (255, 0, 0), 2)  # red circles
             bit_weight *= 2
         output_bytes.append(value)
+#    resized_frame = cv2.resize(frame, (540, 960), interpolation=cv2.INTER_AREA)
+#    cv2.imshow(f"How about this?", resized_frame)
     return output_bytes
 
+def get_all_data(coords, video_path):
+    all_data = []
+    vid = cv2.VideoCapture(video_path)
+    if not vid.isOpened():
+        print("Error: Could not open video.")
+    
+    # Look for pattern changes. Need to account for the fact that a pattern change normally results in at-least one frame of rubbbish 
+    # 
+    # To be taken as a new pattern, we need to see a change from one
+    # frame to the next, followed by a number of identical frames in a row
+    
+    PATTERN_STABLE = 0
+    CHANGE_IN_PROGRESS = 1
+
+
+    stable_count = 0
+    state = PATTERN_STABLE 
+    got_frame, frame = vid.read()
+    if got_frame:
+        last_stable_frame = get_frame_data(sides, frame)
+        all_data.append(last_stable_frame)
+    while got_frame:
+        new_frame_data = get_frame_data(sides, frame)
+        if state == PATTERN_STABLE:
+            if new_frame_data != last_stable_frame:
+                stable_count = 0
+                last_frame_data = new_frame_data
+                state = CHANGE_IN_PROGRESS
+        elif state == CHANGE_IN_PROGRESS:
+            if new_frame_data == last_frame_data:
+                stable_count += 1
+                if stable_count > 3:
+                    all_data.append(last_frame_data)
+                    last_stable_frame = last_frame_data
+                    state = PATTERN_STABLE
+            else:
+                stable_count = 0
+                last_frame_data = new_frame_data
+        got_frame, frame = vid.read()
+    vid.release()
+    return all_data
+
+def rotate_sides(raw_data, starting_point):
+    rotated_all = []
+    for hexagon in raw_data:
+        rotated_hexagon = [0, 0, 0, 0, 0, 0]
+        side_number = starting_point
+        for byte in hexagon:
+            rotated_hexagon[side_number] = byte
+            side_number += 1
+            if side_number >= 6:
+                side_number = 0
+        rotated_all.append(rotated_hexagon)
+    return rotated_all
 
 print("message_decode running")
 leds = get_led_positions("message.mp4")
@@ -258,16 +319,17 @@ for i in range(6):
     for led in sides[i]:
         print (str(led[0]) + "," + str(led[1]))
     print("")
+raw_data = get_all_data(sides, "message.mp4")
+print("Raw message data")
 
-    # Open video file
-    vid = cv2.VideoCapture("message.mp4")
-    if not vid.isOpened():
-        print("Error: Could not open video.")
-    got_frame, frame = vid.read()
-    frame_data = get_frame_data(sides, frame)
-    print("First frame data:")
-    for value in frame_data:
-        print(value)
+
+for rotation in range(1,6):
+    rotated_data = rotate_sides(raw_data,rotation)
+    for hexagon in rotated_data:
+        for byte in hexagon:
+            print(chr(byte), end='')
+    print("")
+
 
 
 
