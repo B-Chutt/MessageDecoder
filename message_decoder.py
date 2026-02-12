@@ -39,9 +39,12 @@ class MessageDecoderGui:
         controls.pack()
 
         tk.Button(controls, text="Open MP4", command=self.open_file).pack(side=tk.LEFT)
-        tk.Button(controls, text="Map LEDs", command=self.get_led_positions).pack(side=tk.LEFT)
-        tk.Button(controls, text="Get Characters", command=self.get_characters).pack(side=tk.LEFT)
-
+        self.map_led_button = tk.Button(controls, text="Map LEDs", command=self.get_led_positions)
+        self.map_led_button.pack(side=tk.LEFT)
+        self.map_led_button["state"] = "disabled"
+        self.read_mess_button = tk.Button(controls, text="Read Message", command=self.get_characters)
+        self.read_mess_button.pack(side=tk.LEFT)
+        self.read_mess_button["state"] = "disabled"
         self.output_text = tk.Text(root, width=self.OUTPUT_WIDTH, height=self.OUTPUT_HEIGHT)
         self.output_text.pack(padx=10, pady=10)
         self.clear_output_text()
@@ -79,35 +82,28 @@ class MessageDecoderGui:
         self.out_cursor_x += 1
 
     def open_file(self):
+        success = False
+        self.clear_diagram()
         path = filedialog.askopenfilename(
             filetypes=[("MP4 files", "*.mp4"), ("All files", "*.*")]
         )
-        if not path:
-            return
-
-        if self.video:
-            self.video.release()
-
-        self.video = cv2.VideoCapture(path)
-        self.paused = True
-        self.step()
-
-    def play(self):
-        self.paused = False
-        self.update_frame()
-
-    def pause(self):
-        self.paused = True
-
-    def step(self):
-        if not self.video:
-            return
-
-        ret, frame = self.video.read()
-        if not ret:
-            return
-
-        self.show_frame(frame)
+        if path:
+            if self.video:
+                # Shut down any already open videos
+                self.video.release()
+            self.video = cv2.VideoCapture(path)
+            if self.video:
+                ret, frame = self.video.read()
+                if ret:
+                    self.show_frame(frame)
+                    self.map_led_button["state"] = "normal"
+                    self.read_mess_button["state"] = "disabled"
+                    success = True
+        if not success:
+            self.map_led_button["state"] = "disabled"
+            self.read_mess_button["state"] = "disabled"
+            self.video_label.configure(image="")
+        return
 
     def update_frame(self):
         if self.paused or not self.video:
@@ -164,6 +160,7 @@ class MessageDecoderGui:
             # We've either run out of video, or we've found 48 LEDs
             self.split_and_sort_hexagon_sides()
             self.show_led_diagram()
+            self.read_mess_button["state"] = "normal"
         else:
             # Not finished yet. Give the GUI some time and then go again
             self.root.after(5, self.get_led_pos_one_frame)
@@ -201,15 +198,16 @@ class MessageDecoderGui:
         height = self.video.get(cv2.CAP_PROP_FRAME_HEIGHT)
         print("Video file has " + str(total_frames) + " frames and runs at " + str(frame_rate)+" FPS")
         print("Frame size is " + str(width) + " X " + str(height)+".")
+        self.clear_diagram()
+        self.frame_number = 0
+        self.video.set(cv2.CAP_PROP_POS_FRAMES,0)
+        self.get_led_pos_one_frame()
 
+    def clear_diagram(self):
         ImageDraw.Draw(self.diagram).rectangle((0, 0, 319, 639), "white")
         diagram_tk = ImageTk.PhotoImage(self.diagram)
         self.bitmap_label.imgtk = diagram_tk
         self.bitmap_label.configure(image=diagram_tk)
-
-        self.frame_number = 0
-        self.video.set(cv2.CAP_PROP_POS_FRAMES,0)
-        self.get_led_pos_one_frame()
 
     def split_and_sort_hexagon_sides(self):
         """

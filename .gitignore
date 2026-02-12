@@ -1,0 +1,4 @@
+*.mp4
+!message.mp4
+venv/
+
