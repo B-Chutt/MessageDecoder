@@ -130,8 +130,8 @@ class MessageDecoderGui:
         self.video_label.configure(image=imgtk)
 
     def get_led_pos_one_frame(self):
-        got_frame, frame = self.video.read()
-        if got_frame:
+        still_running, frame = self.video.read()
+        if still_running:
             found_positions = self.get_lit_led_positions(frame)
             print("Frame " + str(self.frame_number) + ". " + str(len(found_positions)) + " lit LEDs found")
             new_led_count = 0
@@ -156,11 +156,17 @@ class MessageDecoderGui:
                 print("Found " + str(new_led_count) + " new LEDs")
             self.frame_number += 1
             self.show_frame(frame)
-            self.root.after(10, self.get_led_pos_one_frame)
-        else:
-            # Finished getting LED positions
+            if len(self.led_positions) >= 48:
+                # We've got all the LED positions we're looking for. Hope they're all real!
+                still_running = False
+
+        if not still_running:
+            # We've either run out of video, or we've found 48 LEDs
             self.split_and_sort_hexagon_sides()
-            self.mark_sides()
+            self.show_led_diagram()
+        else:
+            # Not finished yet. Give the GUI some time and then go again
+            self.root.after(5, self.get_led_pos_one_frame)
 
     def get_lit_led_positions(self, frame):
         positions = []
@@ -247,23 +253,26 @@ class MessageDecoderGui:
         self.diag_centroid_x = centroid_x / self.DIAGRAM_SCALE
         self.diag_centroid_y = centroid_y / self.DIAGRAM_SCALE
 
-
-    def mark_sides(self):
+    def show_led_diagram(self, current_state=None):
+        if current_state is None:
+            current_state = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
+        side_colours = ["red", "magenta", "green", "orange", "yellow", "blue"]
         draw = ImageDraw.Draw(self.diagram)
-        side_colour = "cyan"
+        side_index = 0
         for side in self.sorted_sides:
+            bit_weight = 1
             for ledPos in side:
-                draw.circle((ledPos[0]/self.DIAGRAM_SCALE, ledPos[1]/self.DIAGRAM_SCALE), 7, side_colour, "lightgrey", width=4)
-            if side_colour == "cyan":
-                side_colour = "magenta"
-            elif side_colour == "magenta":
-                side_colour = "black"
-            elif side_colour == "black":
-                side_colour = "orange"
-            elif side_colour == "orange":
-                side_colour = "yellow"
-            elif side_colour == "yellow":
-                side_colour = "blue"
+                side_colour = side_colours[side_index]
+                if current_state[side_index] & bit_weight:
+                    # LED on
+                    draw.circle((ledPos[0]/self.DIAGRAM_SCALE, ledPos[1]/self.DIAGRAM_SCALE), 7, side_colour, "lightgrey", width=2)
+                else:
+                    # LED off
+                    draw.circle((ledPos[0] / self.DIAGRAM_SCALE, ledPos[1] / self.DIAGRAM_SCALE), 7, "lightgrey",
+                                "lightgrey", width=2)
+
+                bit_weight <<= 1
+            side_index += 1
         diagram_tk = ImageTk.PhotoImage(self.diagram)
         self.bitmap_label.imgtk = diagram_tk
         self.bitmap_label.configure(image=diagram_tk)
@@ -309,7 +318,7 @@ class MessageDecoderGui:
                         self.show_frame(frame)
                         self.show_message_rotations(new_frame_data)
                         ImageDraw.Draw(self.diagram).rectangle((0, 0, 319, 639), "white")
-                        self.mark_sides()
+                        self.show_led_diagram(new_frame_data)
                         for side_index in range(6):
                             current_side_pos = self.sorted_sides[side_index]
                             character = chr(new_frame_data[side_index])
