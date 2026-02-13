@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog
+from tkinter.ttk import Progressbar
 import math
 import cv2
 from collections import defaultdict
@@ -40,13 +41,28 @@ class MessageDecoderGui:
         self.read_mess_button = tk.Button(controls, text="Read Message", command=self.get_characters)
         self.stop_button = tk.Button(controls, text="Stop", command=self.stop_operation)
         self.output_text = tk.Text(display_frame, width=self.OUTPUT_WIDTH, height=self.OUTPUT_HEIGHT)
-
+        job_prog_var = tk.StringVar()
+        job_prog_var.set("Job Progress")
+        progress_frame = tk.Frame(controls, padx=10)
+        progress_frame.grid(row=0, column=1, rowspan=5)
+        job_prog_label = tk.Label(progress_frame, textvariable=job_prog_var)
+        self.job_progress = Progressbar(progress_frame, length=200, mode='determinate')
+        spacer_label = tk.Label(progress_frame)
+        spacer_label.grid(row=2, column=0)
+        video_prog_var = tk.StringVar()
+        video_prog_var.set("Video File Progress")
+        video_prog_label = tk.Label(progress_frame, textvariable=video_prog_var)
+        self.video_progress = Progressbar(progress_frame, length=200, mode='determinate')
         self.video_label.grid(row=0, column=1, pady=10)
         self.bitmap_label.grid(row=0, column=2)
         self.open_file_button.grid(row=0, column=0, pady=10)
         self.map_led_button.grid(row=1, column=0, pady=10)
         self.read_mess_button.grid(row=2, column=0, padx=20, pady=10)
         self.stop_button.grid(row=3, column=0, pady=10)
+        job_prog_label.grid(row=0, column=0)
+        self.job_progress.grid(row=1, column=0)
+        video_prog_label.grid(row=3, column=0)
+        self.video_progress.grid(row=4, column=0)
         self.output_text.grid(row=1, column=0, columnspan = 3, padx=10, pady=10)
 
         self.map_led_button["state"] = "disabled"
@@ -59,6 +75,7 @@ class MessageDecoderGui:
         self.diag_centroid_x = 0
         self.diag_centroid_y = 0
         self.frame_number = 0
+        self.total_frames = 0
         self.stable_count = 0
         self.char_extract_state = self.PATTERN_STABLE_STATE
         self.last_stable_frame_data = []
@@ -160,7 +177,10 @@ class MessageDecoderGui:
                 print("Found " + str(new_led_count) + " new LEDs")
             self.frame_number += 1
             self.show_frame(frame)
-            if len(self.led_positions) >= 48:
+            leds_found = len(self.led_positions)
+            self.job_progress["value"] = 100*leds_found/48
+            self.video_progress["value"] = 100*self.frame_number/self.total_frames
+            if leds_found >= 48:
                 # We've got all the LED positions we're looking for. Hope they're all real!
                 still_running = False
 
@@ -204,11 +224,11 @@ class MessageDecoderGui:
         if not self.video:
             print("Video file not open.")
             return
-        total_frames = self.video.get(cv2.CAP_PROP_FRAME_COUNT)
+        self.total_frames = self.video.get(cv2.CAP_PROP_FRAME_COUNT)
         frame_rate = self.video.get(cv2.CAP_PROP_FPS)
         width = self.video.get(cv2.CAP_PROP_FRAME_WIDTH)
         height = self.video.get(cv2.CAP_PROP_FRAME_HEIGHT)
-        print("Video file has " + str(total_frames) + " frames and runs at " + str(frame_rate)+" FPS")
+        print("Video file has " + str(self.total_frames) + " frames and runs at " + str(frame_rate)+" FPS")
         print("Frame size is " + str(width) + " X " + str(height)+".")
         self.clear_diagram()
         self.frame_number = 0
@@ -216,6 +236,8 @@ class MessageDecoderGui:
         self.stop_button["state"] = "normal"
         self.read_mess_button["state"] = "disabled"
         self.drop_everything = False
+        self.job_progress["value"]=0
+        self.video_progress["value"]=0
         self.get_led_pos_one_frame()
 
     def clear_diagram(self):
@@ -314,6 +336,8 @@ class MessageDecoderGui:
             self.message_data.append(self.last_stable_frame_data)
             self.drop_everything = False
             self.stop_button["state"] = "normal"
+            self.job_progress["value"]=0
+            self.video_progress["value"]=0
             self.get_characters_one_frame()
 
     def get_characters_one_frame(self):
@@ -351,9 +375,16 @@ class MessageDecoderGui:
                     self.stable_count = 0
                     self.last_frame_data = new_frame_data
             if self.drop_everything:
+                # Stop button pressed
                 self.stop_button["state"] = "disabled"
             else:
+                self.frame_number += 1
+                self.job_progress["value"] = 100*self.frame_number/self.total_frames
+                self.video_progress["value"] = 100*self.frame_number/self.total_frames
                 self.root.after(10, self.get_characters_one_frame)
+        else:
+            # End of file
+            self.stop_button["state"] = "disabled"
 
     def show_message_rotations(self, one_frame_chars):
         for rotation in range(6):
