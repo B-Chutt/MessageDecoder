@@ -21,34 +21,38 @@ class MessageDecoderGui:
         self.paused = True
 
         # --- Layout frame for video + bitmap ---
-        display_frame = tk.Frame(root)
-        display_frame.pack()
+        display_frame = tk.Frame(root, bd=3, relief=tk.RIDGE)
+        display_frame.grid(row=0, column=0, padx=10, pady=10)
 
         # Video output
         self.video_label = tk.Label(display_frame)
-        self.video_label.pack(side=tk.LEFT)
 
         # --- Create internal bitmap ---
         self.diagram = Image.new("RGB", (320, 640), "white")
         self.bitmap_tk = ImageTk.PhotoImage(self.diagram)
         self.bitmap_label = tk.Label(display_frame, image=self.bitmap_tk)
-        self.bitmap_label.pack(side=tk.LEFT, padx=10)
 
-        # --- Controls ---
-        controls = tk.Frame(root)
-        controls.pack()
+        controls = tk.Frame(display_frame, bd=3, relief=tk.RIDGE)
+        controls.grid(row=0, column=0)
 
-        tk.Button(controls, text="Open MP4", command=self.open_file).pack(side=tk.LEFT)
+        self.open_file_button = tk.Button(controls, text="Open MP4", command=self.open_file)
         self.map_led_button = tk.Button(controls, text="Map LEDs", command=self.get_led_positions)
-        self.map_led_button.pack(side=tk.LEFT)
-        self.map_led_button["state"] = "disabled"
         self.read_mess_button = tk.Button(controls, text="Read Message", command=self.get_characters)
-        self.read_mess_button.pack(side=tk.LEFT)
-        self.read_mess_button["state"] = "disabled"
-        self.output_text = tk.Text(root, width=self.OUTPUT_WIDTH, height=self.OUTPUT_HEIGHT)
-        self.output_text.pack(padx=10, pady=10)
-        self.clear_output_text()
+        self.stop_button = tk.Button(controls, text="Stop", command=self.stop_operation)
+        self.output_text = tk.Text(display_frame, width=self.OUTPUT_WIDTH, height=self.OUTPUT_HEIGHT)
 
+        self.video_label.grid(row=0, column=1, pady=10)
+        self.bitmap_label.grid(row=0, column=2)
+        self.open_file_button.grid(row=0, column=0, pady=10)
+        self.map_led_button.grid(row=1, column=0, pady=10)
+        self.read_mess_button.grid(row=2, column=0, padx=20, pady=10)
+        self.stop_button.grid(row=3, column=0, pady=10)
+        self.output_text.grid(row=1, column=0, columnspan = 3, padx=10, pady=10)
+
+        self.map_led_button["state"] = "disabled"
+        self.read_mess_button["state"] = "disabled"
+        self.stop_button["state"] = "disabled"
+        self.clear_output_text()
         self.led_positions = []
         self.sorted_sides = []
         self.message_data = []
@@ -63,6 +67,7 @@ class MessageDecoderGui:
         self.out_cursor_x = 0
         self.out_cursor_y = 1
         self.message_frame = 0
+        self.drop_everything = False
 
     def clear_output_text(self):
         self.output_text.delete("1.0", "end")
@@ -71,6 +76,9 @@ class MessageDecoderGui:
             for charpos in range(self.OUTPUT_WIDTH-1):
                 self.output_text.insert("end", " ")
             self.output_text.insert("end", "\r\n")
+
+    def stop_operation(self):
+        self.drop_everything = True
 
     def set_out_cursor(self, line, column):
         self.out_cursor_x = column
@@ -161,9 +169,13 @@ class MessageDecoderGui:
             self.split_and_sort_hexagon_sides()
             self.show_led_diagram()
             self.read_mess_button["state"] = "normal"
+            self.stop_button["state"] = "disabled"
         else:
-            # Not finished yet. Give the GUI some time and then go again
-            self.root.after(5, self.get_led_pos_one_frame)
+            if self.drop_everything:
+                self.stop_button["state"] = "disabled"
+            else:
+                # Not finished yet. Give the GUI some time and then go again
+                self.root.after(5, self.get_led_pos_one_frame)
 
     def get_lit_led_positions(self, frame):
         positions = []
@@ -200,7 +212,10 @@ class MessageDecoderGui:
         print("Frame size is " + str(width) + " X " + str(height)+".")
         self.clear_diagram()
         self.frame_number = 0
-        self.video.set(cv2.CAP_PROP_POS_FRAMES,0)
+        self.video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        self.stop_button["state"] = "normal"
+        self.read_mess_button["state"] = "disabled"
+        self.drop_everything = False
         self.get_led_pos_one_frame()
 
     def clear_diagram(self):
@@ -297,6 +312,8 @@ class MessageDecoderGui:
         if got_frame:
             self.last_stable_frame_data = self.get_frame_data(frame)
             self.message_data.append(self.last_stable_frame_data)
+            self.drop_everything = False
+            self.stop_button["state"] = "normal"
             self.get_characters_one_frame()
 
     def get_characters_one_frame(self):
@@ -333,7 +350,10 @@ class MessageDecoderGui:
                 else:
                     self.stable_count = 0
                     self.last_frame_data = new_frame_data
-            self.root.after(10, self.get_characters_one_frame)
+            if self.drop_everything:
+                self.stop_button["state"] = "disabled"
+            else:
+                self.root.after(10, self.get_characters_one_frame)
 
     def show_message_rotations(self, one_frame_chars):
         for rotation in range(6):
